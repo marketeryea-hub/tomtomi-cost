@@ -258,6 +258,8 @@ input:focus,select:focus { border-color:var(--accent); }
           <select id="stType">
             <option value="out" selected>출고</option>
             <option value="in">입고</option>
+            <option value="adj_plus">재고 조정 (+)</option>
+            <option value="adj_minus">재고 조정 (-)</option>
           </select>
         </div>
         <div class="field" style="max-width:120px"><label>작성자</label><input type="text" id="stWriter" placeholder="이름"></div>
@@ -284,10 +286,14 @@ input:focus,select:focus { border-color:var(--accent); }
       <div class="card-title" style="justify-content:space-between;">
         <span>입출고 이력</span>
         <div style="display:flex;gap:6px;align-items:center;">
+          <select id="logYear" onchange="renderStockLog()" style="font-size:12px;padding:4px 8px;">
+            <option value="all">전체 연도</option>
+          </select>
           <select id="logFilter" onchange="renderStockLog()" style="font-size:12px;padding:4px 8px;">
-            <option value="all">전체</option>
-            <option value="in">입고만</option>
-            <option value="out">출고만</option>
+            <option value="all">전체 유형</option>
+            <option value="in">입고</option>
+            <option value="out">출고</option>
+            <option value="adj">조정</option>
           </select>
         </div>
       </div>
@@ -726,7 +732,7 @@ async function addStockLog(){
   const memo=(writer?'['+writer+'] ':'')+memoText;
   const date=document.getElementById('stDate').value;
   
-  if(type==='out'){
+  if(type==='out'||type==='adj_minus'){
     const current=getStockQty(p.c||p.n);
     if(current<qty){
       if(!confirm('재고가 부족합니다! (현재: '+current+'개)\n마이너스 재고로 기록할까요?'))return;
@@ -742,7 +748,8 @@ async function addStockLog(){
     stockLog.push({date,type,code:p.c,name:p.n,qty,memo,ts});
     document.getElementById('stProdSearch').value='';document.getElementById('stProdIdx').value='';document.getElementById('stQty').value='1';document.getElementById('stMemo').value='';
     renderStockSummary();renderStockLog();
-    showToast((type==='in'?'입고':'출고')+' 기록이 추가되었습니다!');
+    const typeMsg={in:'입고',out:'출고',adj_plus:'재고 조정(+)',adj_minus:'재고 조정(-)'};
+    showToast((typeMsg[type]||type)+' 기록이 추가되었습니다!');
   }catch(err){showToast('저장 실패: '+err.message);}
 }
 
@@ -763,26 +770,40 @@ function getStockQty(key){
 
 function renderStockSummary(){
   const stocks={};
-  stockLog.forEach(l=>{const k=l.code||l.name;if(!stocks[k])stocks[k]={code:l.code,name:l.name,qty:0};if(l.type==='in')stocks[k].qty+=l.qty;else stocks[k].qty-=l.qty;});
+  stockLog.forEach(l=>{const k=l.code||l.name;if(!stocks[k])stocks[k]={code:l.code,name:l.name,qty:0};if(l.type==='in'||l.type==='adj_plus')stocks[k].qty+=l.qty;else stocks[k].qty-=l.qty;});
   const items=Object.values(stocks).filter(s=>s.qty!==0).sort((a,b)=>b.qty-a.qty);
   if(!items.length){document.getElementById('stockSummary').innerHTML='<div class="empty">재고 기록이 없습니다</div>';return;}
-  let html='<table class="stock-table"><thead><tr><th>제품코드</th><th>제품명</th><th style="text-align:right">잔여재고</th></tr></thead><tbody>';
+  let html='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
   items.forEach(s=>{
     const cls=s.qty<=0?'stock-zero':s.qty<=3?'stock-low':'stock-ok';
-    html+='<tr><td style="font-size:12px;color:var(--text3)">'+(s.code||'-')+'</td><td>'+s.name+'</td><td style="text-align:right" class="'+cls+'">'+s.qty+'개</td></tr>';
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg);border-radius:6px;border:1px solid var(--border);">'
+      +'<div><span style="font-size:11px;color:var(--text3);">'+(s.code||'-')+'</span> <span style="font-size:13px;">'+s.name+'</span></div>'
+      +'<span class="'+cls+'" style="font-weight:600;font-size:14px;">'+s.qty+'개</span></div>';
   });
-  html+='</tbody></table>';
+  html+='</div>';
   document.getElementById('stockSummary').innerHTML=html;
 }
 
 function renderStockLog(){
+  // 연도 드롭다운 갱신
+  const years=[...new Set(stockLog.map(l=>l.date.split('-')[0]))].sort().reverse();
+  const ySel=document.getElementById('logYear');
+  const curY=ySel.value;
+  ySel.innerHTML='<option value="all">전체 연도</option>'+years.map(y=>'<option value="'+y+'"'+(y===curY?' selected':'')+'>'+y+'년</option>').join('');
+
   const filter=document.getElementById('logFilter').value;
+  const yearF=document.getElementById('logYear').value;
   let logs=stockLog.slice().reverse();
-  if(filter!=='all')logs=logs.filter(l=>l.type===filter);
+  if(yearF!=='all')logs=logs.filter(l=>l.date.startsWith(yearF));
+  if(filter==='adj')logs=logs.filter(l=>l.type==='adj_plus'||l.type==='adj_minus');
+  else if(filter!=='all')logs=logs.filter(l=>l.type===filter);
   if(!logs.length){document.getElementById('stockLog').innerHTML='<div class="empty">기록이 없습니다</div>';return;}
+  const typeLabel=function(t){if(t==='in')return '입고';if(t==='out')return '출고';if(t==='adj_plus')return '조정(+)';if(t==='adj_minus')return '조정(-)';return t;};
+  const typeClass=function(t){if(t==='in'||t==='adj_plus')return 'log-in';return 'log-out';};
   let html='<table class="log-table"><thead><tr><th>날짜</th><th>유형</th><th>제품명</th><th style="text-align:right">수량</th><th>사유</th><th></th></tr></thead><tbody>';
   logs.forEach(l=>{
-    html+='<tr><td>'+l.date+'</td><td class="'+(l.type==='in'?'log-in':'log-out')+'">'+(l.type==='in'?'입고':'출고')+'</td><td>'+(l.code?'<span style="font-size:11px;color:var(--text3)">['+l.code+']</span> ':'')+l.name+'</td><td style="text-align:right">'+(l.type==='in'?'+':'-')+l.qty+'</td><td style="color:var(--text2)">'+l.memo+'</td><td><button class="btn-red" onclick="deleteStockLog('+l.ts+')">삭제</button></td></tr>';
+    const sign=(l.type==='in'||l.type==='adj_plus')?'+':'-';
+    html+='<tr><td>'+l.date+'</td><td class="'+typeClass(l.type)+'">'+typeLabel(l.type)+'</td><td>'+(l.code?'<span style="font-size:11px;color:var(--text3)">['+l.code+']</span> ':'')+l.name+'</td><td style="text-align:right">'+sign+l.qty+'</td><td style="color:var(--text2)">'+l.memo+'</td><td><button class="btn-red" onclick="deleteStockLog('+l.ts+')">삭제</button></td></tr>';
   });
   html+='</tbody></table>';
   document.getElementById('stockLog').innerHTML=html;
