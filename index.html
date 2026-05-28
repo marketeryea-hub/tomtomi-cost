@@ -1202,7 +1202,7 @@ async function saveMemo(){
 
 // **볼드** 마크다운 지원
 function renderMemoText(txt){
-  return txt.replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  return txt.replace(/\x3c/g,'&lt;').replace(/\x3e/g,'&gt;')
     .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
 }
 
