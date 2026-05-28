@@ -13,8 +13,8 @@
   --border: #e8e8e6;
   --border-light: #f0f0ee;
   --text: #1a1a1a;
-  --text2: #6b6b6b;
-  --text3: #9b9b9b;
+  --text2: #555555;
+  --text3: #777777;
   --primary: #2563eb;
   --primary-light: #eff6ff;
   --primary-hover: #1d4ed8;
@@ -41,15 +41,15 @@ body { font-family:'Pretendard','Noto Sans KR',system-ui,-apple-system,sans-seri
 .container { max-width:1200px; margin:0 auto; padding:32px 28px 80px; }
 .page-header { margin-bottom:28px; }
 .page-title { font-size:20px; font-weight:600; color:var(--text); letter-spacing:-0.3px; }
-.page-desc { font-size:13px; color:var(--text3); margin-top:4px; }
+.page-desc { font-size:13px; color:var(--text2); margin-top:4px; }
 
 /* Memo editor */
 .memo-area { margin-top:8px; position:relative; }
-.memo-display { font-size:12px; color:var(--text2); line-height:1.7; padding:10px 14px; border:1px dashed transparent; border-radius:8px; cursor:pointer; transition:all .15s; white-space:pre-wrap; word-break:break-word; min-height:20px; }
+.memo-display { font-size:12px; color:#222; line-height:1.7; padding:10px 14px; border:1px dashed transparent; border-radius:8px; cursor:pointer; transition:all .15s; white-space:pre-wrap; word-break:break-word; min-height:20px; }
 .memo-display:hover { border-color:var(--border); background:rgba(0,0,0,.01); }
-.memo-display .memo-hint { color:var(--text3); font-style:italic; }
+.memo-display .memo-hint { color:var(--text2); font-style:italic; }
 .memo-editor { display:none; }
-.memo-editor textarea { font-family:inherit; font-size:12px; line-height:1.7; padding:10px 14px; border:1px solid var(--primary); border-radius:8px; background:var(--card); color:var(--text); width:100%; min-height:60px; resize:vertical; outline:none; box-shadow:0 0 0 3px rgba(37,99,235,.08); }
+.memo-editor textarea { font-family:inherit; font-size:12px; line-height:1.7; padding:10px 14px; border:1px solid var(--primary); border-radius:8px; background:var(--card); color:#222; width:100%; min-height:60px; resize:vertical; outline:none; box-shadow:0 0 0 3px rgba(37,99,235,.08); }
 .memo-editor-bar { display:flex; justify-content:space-between; align-items:center; margin-top:6px; }
 .memo-saved { font-size:11px; color:var(--success-text); opacity:0; transition:opacity .3s; }
 .memo-saved.show { opacity:1; }
@@ -1155,7 +1155,7 @@ async function loadMemo(){
     const data=await sbFetch('hub_memo?id=eq.1');
     if(data&&data.length&&data[0].content){
       const txt=data[0].content;
-      document.getElementById('memoText').textContent=txt;
+      document.getElementById('memoText').innerHTML=renderMemoText(txt);
       document.getElementById('memoText').style.display='inline';
       document.getElementById('memoPlaceholder').style.display='none';
       document.getElementById('memoTextarea').value=txt;
@@ -1177,7 +1177,6 @@ function closeMemo(){
 async function saveMemo(){
   const txt=document.getElementById('memoTextarea').value.trim();
   try{
-    // upsert: id=1 고정 레코드
     await sbFetch('hub_memo',{
       method:'POST',
       headers:{'Prefer':'resolution=merge-duplicates,return=representation'},
@@ -1185,20 +1184,27 @@ async function saveMemo(){
     });
     // 디스플레이 업데이트
     if(txt){
-      document.getElementById('memoText').textContent=txt;
+      document.getElementById('memoText').innerHTML=renderMemoText(txt);
       document.getElementById('memoText').style.display='inline';
       document.getElementById('memoPlaceholder').style.display='none';
     }else{
       document.getElementById('memoText').style.display='none';
       document.getElementById('memoPlaceholder').style.display='inline';
     }
-    const saved=document.getElementById('memoSaved');
-    saved.classList.add('show');
-    setTimeout(()=>saved.classList.remove('show'),2000);
+    // 에디터 닫고 결과 보여주기
+    closeMemo();
+    showToast('메모가 저장되었습니다');
   }catch(err){
     showToast('메모 저장 실패: '+err.message);
     console.error(err);
   }
+}
+
+// **볼드** 마크다운 지원
+function renderMemoText(txt){
+  return txt.replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+}
 }
 
 // 초기 렌더
