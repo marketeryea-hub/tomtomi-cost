@@ -266,7 +266,7 @@ input::placeholder { color:var(--text3); }
   <div class="tabs">
     <div class="tab active" onclick="switchTab('stock')">재고관리</div>
     <div class="tab" onclick="switchTab('shipping')">출고요청</div>
-    <div class="tab" onclick="switchTab('cost')">비용 기록</div>
+    <div class="tab" onclick="switchTab('cost')">마케팅 비용</div>
     <div class="tab" onclick="switchTab('dashboard')">비용 대시보드</div>
   </div>
 
@@ -274,7 +274,7 @@ input::placeholder { color:var(--text3); }
   <div id="tab-stock" class="tab-content active">
     <div class="sub-tabs">
       <div class="sub-tab active" onclick="switchSubTab('status')">재고현황</div>
-      <div class="sub-tab" onclick="switchSubTab('input')">재고입력</div>
+      <div class="sub-tab" onclick="switchSubTab('input')">✏️ 재고입력</div>
     </div>
 
     <!-- 서브탭: 재고현황 -->
@@ -299,6 +299,25 @@ input::placeholder { color:var(--text3); }
         </div>
       </div>
       <div id="stockStatusArea"></div>
+
+      <!-- 전체 입출고 이력 -->
+      <div style="margin-top:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <span style="font-size:15px;font-weight:600;">입출고 이력</span>
+          <div style="display:flex;gap:6px;">
+            <select id="logYear" onchange="renderFullLog()" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card);">
+              <option value="all">전체 연도</option>
+            </select>
+            <select id="logFilter" onchange="renderFullLog()" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card);">
+              <option value="all">전체 유형</option>
+              <option value="in">입고</option>
+              <option value="out">출고</option>
+              <option value="adj">조정</option>
+            </select>
+          </div>
+        </div>
+        <div id="fullLogArea"></div>
+      </div>
     </div>
 
     <!-- 서브탭: 재고입력 -->
@@ -474,7 +493,6 @@ input::placeholder { color:var(--text3); }
         <div class="field" style="max-width:160px"><label>날짜</label><input type="date" id="costDate"></div>
         <div class="field" style="max-width:180px"><label>비용 유형</label>
           <select id="costType">
-            <option value="협찬/시딩 출고">협찬/시딩 출고</option>
             <option value="이벤트">이벤트 (경품, 체험단 등)</option>
             <option value="인쇄물">인쇄물 (전단지, 포스터 등)</option>
             <option value="촬영/제작비">촬영/제작비</option>
@@ -808,7 +826,7 @@ function updH(){R.forEach((r,i)=>{const ne=document.getElementById('rn_'+i);if(!
 let asIdx=-1;
 function showSug(ri,q){
   const el=document.getElementById('sg_'+ri);const ql=q.trim().toLowerCase();asIdx=-1;
-  let res;if(!ql)res=P.slice(0,12).map((p,i)=>({...p,idx:i}));
+  let res;if(!ql)res=P.map((p,i)=>({...p,idx:i}));
   else res=P.map((p,i)=>({...p,idx:i})).filter(p=>p.n.toLowerCase().includes(ql)||p.c.toLowerCase().includes(ql));
   if(!res.length){el.innerHTML='<div style="padding:10px 14px;font-size:12px;color:var(--text3)">검색 결과 없음</div>';el.style.display='block';return;}
   el.innerHTML=res.map(p=>{const nh=ql?hlm(p.n,ql):p.n;const ch=p.c?(ql?hlm(p.c,ql):p.c):'';return '<div class="sug-item" onmousedown="addProd('+ri+','+p.idx+')">'+(ch?'<span class="sug-code">'+ch+'</span>':'')+nh+'</div>';}).join('');
@@ -945,7 +963,34 @@ async function saveCart(){
   }
   
   if(savedCount===cart.length){
-    showToast((typeMsg[type]||type)+' '+savedCount+'건 일괄 저장 완료!');
+    // 출고일 때 원가 기준으로 비용 기록 자동 저장
+    if(type==='out'){
+      try{
+        const costRecords=cart.map(item=>{
+          const pm=P.find(p=>(item.code&&p.c===item.code)||p.n===item.name);
+          const unitCost=pm?pm.p:0;
+          return {
+            date,
+            cost_type:'협찬/시딩 출고',
+            item_name:item.name,
+            amount:unitCost*item.qty,
+            shipping:false,
+            shipping_fee:0,
+            memo:'[재고출고 자동] 수량:'+item.qty+' × 원가:'+(unitCost?unitCost.toLocaleString()+'원':'미매칭')+' / '+(memo||'-')
+          };
+        });
+        await sbFetch('marketing_cost',{
+          method:'POST',
+          body:JSON.stringify(costRecords)
+        });
+        showToast((typeMsg[type]||type)+' '+savedCount+'건 저장 + 비용 기록 완료!');
+      }catch(err){
+        console.error('비용 자동 기록 실패:',err);
+        showToast(savedCount+'건 출고 저장됨 (비용 기록 실패: '+err.message+')');
+      }
+    }else{
+      showToast((typeMsg[type]||type)+' '+savedCount+'건 일괄 저장 완료!');
+    }
     cart=[];
     renderCart();
     document.getElementById('stMemo').value='';
@@ -969,7 +1014,7 @@ async function loadStockFromSB(){
 let stAsIdx=-1;
 function showStockSug(q){
   const el=document.getElementById('stSuggestions');const ql=q.trim().toLowerCase();stAsIdx=-1;
-  let res;if(!ql)res=P.slice(0,12).map((p,i)=>({...p,idx:i}));
+  let res;if(!ql)res=P.map((p,i)=>({...p,idx:i}));
   else res=P.map((p,i)=>({...p,idx:i})).filter(p=>p.n.toLowerCase().includes(ql)||p.c.toLowerCase().includes(ql));
   if(!res.length){el.innerHTML='<div style="padding:10px;font-size:12px;color:var(--text3)">검색 결과 없음</div>';el.style.display='block';return;}
   el.innerHTML=res.map(p=>{const nh=ql?hlm(p.n,ql):p.n;const ch=p.c?(ql?hlm(p.c,ql):p.c):'';return '<div class="sug-item" onmousedown="selectStockProd('+p.idx+')">'+(ch?'<span class="sug-code">'+ch+'</span>':'')+nh+'</div>';}).join('');
@@ -1000,8 +1045,8 @@ function getStockQty(key){
   return qty;
 }
 
-function renderStockSummary(){ renderStockStatus(); }
-function renderStockLog(){ renderStockStatus(); }
+function renderStockSummary(){ renderStockStatus(); renderFullLog(); }
+function renderStockLog(){ renderStockStatus(); renderFullLog(); }
 
 let stockPage=0;
 let expandedProduct=null;
@@ -1099,6 +1144,40 @@ function toggleStockDetail(encodedKey){
   if(expandedProduct===key)expandedProduct=null;
   else expandedProduct=key;
   renderStockStatus();
+}
+
+function renderFullLog(){
+  // 연도 드롭다운 갱신
+  const years=[...new Set(stockLog.map(l=>l.date.split('-')[0]))].sort().reverse();
+  const ySel=document.getElementById('logYear');
+  const curY=ySel.value;
+  ySel.innerHTML='<option value="all">전체 연도</option>'+years.map(y=>'<option value="'+y+'"'+(y===curY?' selected':'')+'>'+y+'년</option>').join('');
+
+  const filter=document.getElementById('logFilter').value;
+  const yearF=document.getElementById('logYear').value;
+  let logs=stockLog.slice().reverse();
+  if(yearF!=='all')logs=logs.filter(l=>l.date.startsWith(yearF));
+  if(filter==='adj')logs=logs.filter(l=>l.type==='adj_plus'||l.type==='adj_minus');
+  else if(filter!=='all')logs=logs.filter(l=>l.type===filter);
+
+  const el=document.getElementById('fullLogArea');
+  if(!logs.length){el.innerHTML='<div class="stock-table-wrap"><div class="empty">기록이 없습니다</div></div>';return;}
+
+  const typeBadge=function(t){
+    if(t==='in')return '<span class="log-type log-type-in">입고</span>';
+    if(t==='adj_plus')return '<span class="log-type log-type-adj">조정(+)</span>';
+    if(t==='adj_minus')return '<span class="log-type log-type-adj">조정(-)</span>';
+    return '<span class="log-type log-type-out">출고</span>';
+  };
+
+  let html='<div class="stock-table-wrap"><table class="st-table"><thead><tr><th>날짜</th><th>유형</th><th>제품코드</th><th>제품명</th><th class="r">수량</th><th>사유</th><th style="width:36px;"></th></tr></thead><tbody>';
+  logs.forEach(l=>{
+    const sign=(l.type==='in'||l.type==='adj_plus')?'+':'-';
+    const signColor=sign==='+'?'var(--success-text)':'var(--warn-text)';
+    html+='<tr><td style="color:var(--text2);">'+l.date+'</td><td>'+typeBadge(l.type)+'</td><td style="color:var(--text2);font-size:12px;">'+(l.code||'-')+'</td><td>'+l.name+'</td><td class="r" style="font-weight:500;color:'+signColor+';">'+sign+l.qty+'</td><td style="color:var(--text2);font-size:12px;">'+l.memo+'</td><td style="text-align:center;"><button class="btn-icon" onclick="deleteStockLog('+l.ts+')" title="삭제" style="width:24px;height:24px;font-size:13px;">×</button></td></tr>';
+  });
+  html+='</tbody></table></div>';
+  el.innerHTML=html;
 }
 
 function exportBackup(){
@@ -1232,7 +1311,7 @@ function updateShippingFee(){
 function clearCostForm(keepContext){
   if(!keepContext){
     document.getElementById('costDate').value=new Date().toISOString().split('T')[0];
-    document.getElementById('costType').value='협찬/시딩 출고';
+    document.getElementById('costType').value='이벤트';
   }
   document.getElementById('costItem').value='';
   document.getElementById('costAmount').value='';
